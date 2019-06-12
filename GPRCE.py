@@ -7,13 +7,16 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import norm
 from tqdm import tqdm       # progress bar
+from torch.utils.tensorboard import SummaryWriter
 
 
 def main():
     n_samples = 5
-    n_layers = 50
-    width = 10000
+    n_layers = 3
+    width = [10, 50, 100, 200, 500, 1000]
     nt = 100
+
+    ylim = [-0.1, 0.1]
 
     # start rotating from (0, 1) on unit circle
     th_plot = np.linspace(0, np.pi * 2, nt)
@@ -24,33 +27,37 @@ def main():
         x = np.matmul(R, np.array([1, 0]))
         x_plot[i] = x
 
-    # indep normal prior
-    nn = RCENet(F, n_layers=n_layers, width=width, activation='relu', n_samples=n_samples)
-    # evaluate f(x) for samples
-    f = nn.generate_samples(x_plot) 
+    for w in width:
+        # indep normal prior
+        nn = RCENet(F, n_layers=n_layers, width=w, activation='relu', n_samples=n_samples)
+        # evaluate f(x) for samples
+        f = nn.generate_samples(x_plot) 
 
-    plt.plot(th_plot, f)
-    plt.title('Neal prior')
-    plt.xlabel('theta')
-    plt.ylabel('f(theta)')
-    plt.show()
+        plt.figure()
+        plt.plot(th_plot, f)
+        plt.ylim(ylim[0], ylim[1])
+        plt.title('Standard Gaussian prior - width ' + str(w))
+        plt.xlabel('theta')
+        plt.ylabel('f(theta)')
 
-    # funky prior
-    nn1 = RCENet(F1, n_layers=n_layers, width=width, activation='relu', n_samples=n_samples)
-    # evaluate f(x) for samples
-    f1 = nn1.generate_samples(x_plot) 
+        # funky prior
+        nn1 = RCENet(F1, n_layers=n_layers, width=w, activation='relu', n_samples=n_samples)
+        # evaluate f(x) for samples
+        f1 = nn1.generate_samples(x_plot) 
 
-    plt.plot(th_plot, f1)
-    plt.title('RCE prior')
-    plt.xlabel('theta')
-    plt.ylabel('f(theta)')
+        plt.figure()
+        plt.plot(th_plot, f1)
+        plt.ylim(ylim[0], ylim[1])
+        plt.title('RCE prior - width ' + str(w))
+        plt.xlabel('theta')
+        plt.ylabel('f(theta)')
     plt.show()
 
 # generate F(A, B, C, D) for collection of samples from A, B, C, D
 # input: an array of samples from A (float) B (col vec) C (row vec) D (matrix)
 # out: samples from RCE prior W = F(A, B, C, D)
 
-# Gaussian prior
+# Gaussian prior, takes input of uniform RVs, generates iid standard Gaussian weights
 def F(A, B, C, D):
     # extract no. of rows and cols in W from D
     nrows, ncols = D.shape[1], D.shape[2]
@@ -60,7 +67,6 @@ def F(A, B, C, D):
     B = B.repeat(1, ncols).view(-1, ncols, nrows).permute(0, 2, 1)
     # tile C
     C = C.repeat(1, nrows).view(-1, nrows, ncols)
-    #F = 1 / 4 * torch.FloatTensor(norm.ppf(A) + norm.ppf(B) + norm.ppf(C) + norm.ppf(D))
     F = torch.FloatTensor(norm.ppf(D))
     return F
 
@@ -74,7 +80,7 @@ def F1(A, B, C, D):
     B = B.repeat(1, ncols).view(-1, ncols, nrows).permute(0, 2, 1)
     # tile C
     C = C.repeat(1, nrows).view(-1, nrows, ncols)
-    F = torch.FloatTensor(-0 * A.numpy() + norm.ppf(B) * norm.ppf(C) + norm.ppf(D))
+    F = 0.5 * (torch.FloatTensor(- A.numpy() + 2 * norm.ppf(B) * norm.ppf(C) + 3 * norm.ppf(D)))
     #F = torch.FloatTensor(norm.ppf(D))
     return F
     
@@ -127,11 +133,12 @@ class RCENet:
             # for each layer sample A, B, C, D to yield W_i
             # find Wx for each x -> must use SAME WEIGHT VECTOR for each x, so eval W and then all x
             if i == 0:
-                Wsamples = 1 / np.sqrt(width) * torch.distributions.Normal(0, 1).sample([n_samples, nrows, ncols])
+                Wsamples = 1 / np.sqrt(2 * len(x)) * torch.distributions.Normal(0, 1).sample([n_samples, nrows, ncols])
             else:
-                Wsamples = 1 / np.sqrt(width) * torch.distributions.Normal(0, 1).sample([n_samples, nrows, ncols])
+                #Wsamples = 1 / np.sqrt(width) * torch.distributions.Normal(0, 1).sample([n_samples, nrows, ncols])
+                Wsamples = 1 / np.sqrt(2 * width) * self.W_samples(width, width)
             
-            for j in range(len(x)):
+            for j in tqdm(range(len(x))):
                 # tile x for evaluation of f(x) for all samples (vectorised)
                 if i == 0:
                     x_temp = torch.FloatTensor(np.atleast_1d(x[j])).repeat(n_samples).view(n_samples, ncols, 1)
@@ -146,7 +153,7 @@ class RCENet:
                 x_temp_list[j] = x_temp
                 
         # apply linear transform to final layer output to turn into scalar
-        Wsamples = 1 / np.sqrt(width) * self.W_samples(1, width)
+        Wsamples = 1 / np.sqrt(2 * width) * self.W_samples(1, width)
         x_out = torch.zeros([len(x), n_samples])
         for i in range(len(x)):
             x_out[i] = torch.matmul(Wsamples, x_temp_list[i]).view(n_samples)
