@@ -63,7 +63,6 @@ def main():
         #ax1.set_ylabel(r'$f(\theta)$')
     #writer.add_figure('plot', fig)
     #writer.close()
-    plt.tight_layout()
     plt.show()
 
 # generate F(A, B, C, D) for collection of samples from A, B, C, D
@@ -80,8 +79,9 @@ def F(A, B, C, D):
     B = B.repeat(1, ncols).view(-1, ncols, nrows).permute(0, 2, 1)
     # tile C
     C = C.repeat(1, nrows).view(-1, nrows, ncols)
-    F = torch.FloatTensor(norm.ppf(D))
-    return F
+    #F = torch.FloatTensor(norm.ppf(D))
+    return D 
+    #return F
 
 # RCE prior
 def F1(A, B, C, D):
@@ -93,7 +93,9 @@ def F1(A, B, C, D):
     B = B.repeat(1, ncols).view(-1, ncols, nrows).permute(0, 2, 1)
     # tile C
     C = C.repeat(1, nrows).view(-1, nrows, ncols)
-    F = 0.5 * (torch.FloatTensor(- A.numpy() + 2 * norm.ppf(B) * norm.ppf(C) + 3 * norm.ppf(D)))
+    #F = 0.5 * (torch.FloatTensor(- A.numpy() + 2 * norm.ppf(B) * norm.ppf(C) + 3 * norm.ppf(D)))
+    #F = torch.FloatTensor(- A + 2 * B * C + 3 * D) # A, B, C, D are generated as normal r.v.s instead of inverting normal cdf from uniform for numerical stability 
+    F = D - 0.01
     #F = torch.FloatTensor(norm.ppf(D))
     return F
     
@@ -115,10 +117,14 @@ class RCENet:
     # generate samples from W given dimensions
     def W_samples(self, nrows, ncols):    
         n_samples = self.n_samples
-        A = torch.rand(n_samples)
-        B = torch.rand(n_samples, nrows)
-        C = torch.rand(n_samples, ncols)
-        D = torch.rand(n_samples, nrows, ncols)
+        #A = torch.rand(n_samples)
+        #B = torch.rand(n_samples, nrows)
+        #C = torch.rand(n_samples, ncols)
+        #D = torch.rand(n_samples, nrows, ncols)
+        A = torch.randn(n_samples)
+        B = torch.randn(n_samples, nrows)
+        C = torch.randn(n_samples, ncols)
+        D = torch.randn(n_samples, nrows, ncols)
         return self.F(A, B, C, D)
     
     # for a vector of x, generate samples from f(x) assuming RCE distn on weights
