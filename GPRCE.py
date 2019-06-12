@@ -7,16 +7,18 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import norm
 from tqdm import tqdm       # progress bar
-from torch.utils.tensorboard import SummaryWriter
+#from torch.utils.tensorboard import SummaryWriter
 
 
 def main():
     n_samples = 5
-    n_layers = 3
-    width = [10, 50, 100, 200, 500, 1000]
+    n_layers = 2
+    width = [10, 50, 100]
     nt = 100
 
-    ylim = [-0.1, 0.1]
+    ylim = [-1, 1]
+
+    #writer = SummaryWriter()
 
     # start rotating from (0, 1) on unit circle
     th_plot = np.linspace(0, np.pi * 2, nt)
@@ -27,30 +29,38 @@ def main():
         x = np.matmul(R, np.array([1, 0]))
         x_plot[i] = x
 
-    for w in width:
+    fig = plt.figure()
+    plt.title('Layers = ' + str(n_layers))
+    plt.ylabel(r'$NN(\theta)$')
+    plt.xlabel(r'$\theta$')
+
+    for i in tqdm(range(len(width))):
+        w = width[i]
         # indep normal prior
         nn = RCENet(F, n_layers=n_layers, width=w, activation='relu', n_samples=n_samples)
         # evaluate f(x) for samples
         f = nn.generate_samples(x_plot) 
 
-        plt.figure()
-        plt.plot(th_plot, f)
-        plt.ylim(ylim[0], ylim[1])
-        plt.title('Standard Gaussian prior - width ' + str(w))
-        plt.xlabel('theta')
-        plt.ylabel('f(theta)')
+        ax = fig.add_subplot(2, len(width), 1 + i)
+        ax.plot(th_plot, f)
+        ax.set_ylim(ylim[0], ylim[1])
+        ax.set_title('Gaussian - width ' + str(w))
+        #ax.set_ylabel(r'$f(\theta)$')
 
         # funky prior
         nn1 = RCENet(F1, n_layers=n_layers, width=w, activation='relu', n_samples=n_samples)
         # evaluate f(x) for samples
         f1 = nn1.generate_samples(x_plot) 
-
-        plt.figure()
-        plt.plot(th_plot, f1)
-        plt.ylim(ylim[0], ylim[1])
-        plt.title('RCE prior - width ' + str(w))
-        plt.xlabel('theta')
-        plt.ylabel('f(theta)')
+        
+        ax1 = fig.add_subplot(2, len(width), len(width) + 1 + i)
+        ax1.plot(th_plot, f1)
+        ax1.set_ylim(ylim[0], ylim[1])
+        ax1.set_title('RCE - width ' + str(w))
+        #ax1.set_xlabel(r'$\theta$')
+        #ax1.set_ylabel(r'$f(\theta)$')
+    #writer.add_figure('plot', fig)
+    #writer.close()
+    plt.tight_layout()
     plt.show()
 
 # generate F(A, B, C, D) for collection of samples from A, B, C, D
@@ -117,7 +127,7 @@ class RCENet:
         n_samples = self.n_samples
         n_layers = self.n_layers
         width = self.width
-        # initialise input into network
+        # list stores values of outputs at each layer
         x_temp_list = torch.zeros([len(x), n_samples, width, 1])
         # process layers sequentially, edge cases for final and init layers
         for i in tqdm(range(n_layers)):
@@ -133,27 +143,26 @@ class RCENet:
             # for each layer sample A, B, C, D to yield W_i
             # find Wx for each x -> must use SAME WEIGHT VECTOR for each x, so eval W and then all x
             if i == 0:
-                Wsamples = 1 / np.sqrt(2 * len(x)) * torch.distributions.Normal(0, 1).sample([n_samples, nrows, ncols])
+                Wsamples = 1 / np.sqrt(len(x) / 2) * torch.distributions.Normal(0, 1).sample([n_samples, nrows, ncols])
             else:
-                #Wsamples = 1 / np.sqrt(width) * torch.distributions.Normal(0, 1).sample([n_samples, nrows, ncols])
-                Wsamples = 1 / np.sqrt(2 * width) * self.W_samples(width, width)
+                Wsamples = 1 / np.sqrt(width / 2) * self.W_samples(width, width)
             
-            for j in tqdm(range(len(x))):
+            # iterate over values of x
+            for j in range(len(x)):
                 # tile x for evaluation of f(x) for all samples (vectorised)
                 if i == 0:
-                    x_temp = torch.FloatTensor(np.atleast_1d(x[j])).repeat(n_samples).view(n_samples, ncols, 1)
+                    x_temp = torch.FloatTensor(np.atleast_1d(x[j])).repeat(n_samples).view(n_samples, ncols, 1) # initial value of x is provided
                 else:
-                    x_temp = x_temp_list[j]
-                #if j == 0:
-                #    print(Wsamples[0].shape, x_temp[0].shape)
+                    x_temp = x_temp_list[j] # otherwise, take previous layer output
                 # apply linear transform from W
                 x_temp = torch.matmul(Wsamples, x_temp)
                 # apply activation
                 x_temp = self.phi(x_temp)
                 x_temp_list[j] = x_temp
-                
+
+        # last layer processing (linear transformation only)        
         # apply linear transform to final layer output to turn into scalar
-        Wsamples = 1 / np.sqrt(2 * width) * self.W_samples(1, width)
+        Wsamples = 1 / np.sqrt(width / 2) * self.W_samples(1, width)
         x_out = torch.zeros([len(x), n_samples])
         for i in range(len(x)):
             x_out[i] = torch.matmul(Wsamples, x_temp_list[i]).view(n_samples)
