@@ -12,11 +12,11 @@ from tqdm import tqdm       # progress bar
 
 def main():
     n_samples = 5
-    n_layers = 2
-    width = [10, 50, 100]
+    n_layers = 50
+    width = [10, 50, 100, 200, 500, 1000]
     nt = 100
 
-    ylim = [-1, 1]
+    ylim = [-2, 2]
 
     #writer = SummaryWriter()
 
@@ -29,10 +29,10 @@ def main():
         x = np.matmul(R, np.array([1, 0]))
         x_plot[i] = x
 
-    fig = plt.figure()
-    plt.title('Layers = ' + str(n_layers))
-    plt.ylabel(r'$NN(\theta)$')
-    plt.xlabel(r'$\theta$')
+    fig, axes = plt.subplots(nrows=2, ncols=len(width))
+    fig.subplots_adjust(hspace=0.5)
+    fig.suptitle('No. of layers = ' + str(n_layers))
+    axesf = axes.flatten()
 
     for i in tqdm(range(len(width))):
         w = width[i]
@@ -41,8 +41,9 @@ def main():
         # evaluate f(x) for samples
         f = nn.generate_samples(x_plot) 
 
-        ax = fig.add_subplot(2, len(width), 1 + i)
+        ax = axesf[i] 
         ax.plot(th_plot, f)
+        ax.set_ylabel(r'$NN(\theta)$')
         ax.set_ylim(ylim[0], ylim[1])
         ax.set_title('Gaussian - width ' + str(w))
         #ax.set_ylabel(r'$f(\theta)$')
@@ -52,8 +53,10 @@ def main():
         # evaluate f(x) for samples
         f1 = nn1.generate_samples(x_plot) 
         
-        ax1 = fig.add_subplot(2, len(width), len(width) + 1 + i)
+        ax1 = axesf[len(width) + i]
         ax1.plot(th_plot, f1)
+        ax1.set_ylabel(r'$NN(\theta)$')
+        ax1.set_xlabel(r'$\theta$')
         ax1.set_ylim(ylim[0], ylim[1])
         ax1.set_title('RCE - width ' + str(w))
         #ax1.set_xlabel(r'$\theta$')
